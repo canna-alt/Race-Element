@@ -39,27 +39,48 @@ internal sealed class DirtRally2DataProvider : AbstractSimDataProvider
         localCar.Physics.Location = new(data.X, data.Y, data.Z);
         localCar.Physics.Velocity = data.Speed * 3.6f;
         localCar.Physics.Acceleration = new(data.GforceLat, 0, data.GforceLong);
+
         localCar.Inputs.Throttle = data.Throttle;
         localCar.Inputs.Brake = data.Brake;
         localCar.Inputs.Clutch = data.Clutch;
         localCar.Inputs.Steering = data.Steer;
-
         localCar.Inputs.Gear = data.Gear switch
         {
-            10 => 0, // Reverse
-            _ => (int)data.Gear + 1 // Neutraal + Forward gears
+            10 => 0,
+            _ => (int)data.Gear + 1
         };
-        {
-        }
 
-        localCar.Engine.Rpm = (int)(data.Rpm); // Assuming full RPM value in DR2
+        localCar.Engine.Rpm = (int)(data.Rpm);
         localCar.Engine.MaxRpm = (int)(data.MaxRpm);
         localCar.Engine.IsRunning = localCar.Physics.Velocity != 0f;
+
         localCar.Tyres.SlipRatio = [SlipCalc.Ratio(data.WheelSpeedFL, data.Speed),
                                     SlipCalc.Ratio(data.WheelSpeedFR, data.Speed),
                                     SlipCalc.Ratio(data.WheelSpeedRL, data.Speed),
-                                    SlipCalc.Ratio(data.WheelSpeedRR, data.Speed)
-                                    ];
+                                    SlipCalc.Ratio(data.WheelSpeedRR, data.Speed)];
+
+        localCar.Tyres.Velocity = [data.WheelSpeedFL,
+                                   data.WheelSpeedFR,
+                                   data.WheelSpeedRL,
+                                   data.WheelSpeedRR];
+
+        localCar.Suspension.RideHeight = [data.Susp_pos_fl,
+                                          data.Susp_pos_fr,
+                                          data.Susp_pos_bl,
+                                          data.Susp_pos_br];
+
+        localCar.Brakes.DiscTemperature = [data.Brakes_temp_fl,
+                                           data.Brakes_temp_fr,
+                                           data.Brakes_temp_bl,
+                                           data.Brakes_temp_br];
+
+        var forwardVec = new Vector3(data.PitchVecX, data.PitchVecY, data.PitchVecZ);
+        var rightVec = new Vector3(data.Xr, data.Yr, data.Zr);
+        var upVec = Vector3.Cross(rightVec, forwardVec);
+        localCar.Physics.Rotation = QuaternionFromBasis(rightVec, upVec, forwardVec);
+
+        localCar.Timing.CurrentLaptimeMS = (int)(data.LapTime * 1000);
+        localCar.Race.LapPositionPercentage = data.PercentComplete;
     }
 
     internal override int PollingRate()
@@ -126,6 +147,57 @@ internal sealed class DirtRally2DataProvider : AbstractSimDataProvider
         {
             _udpClient?.Close();
         }
+    }
+
+    private static Quaternion QuaternionFromBasis(Vector3 right, Vector3 up, Vector3 forward)
+    {
+        var m11 = right.X;
+        var m12 = up.X;
+        var m13 = forward.X;
+        var m21 = right.Y;
+        var m22 = up.Y;
+        var m23 = forward.Y;
+        var m31 = right.Z;
+        var m32 = up.Z;
+        var m33 = forward.Z;
+
+        float trace = m11 + m22 + m33;
+        Quaternion q = new();
+
+        if (trace > 0.0f)
+        {
+            float s = MathF.Sqrt(trace + 1.0f) * 2.0f;
+            q.W = 0.25f * s;
+            q.X = (m32 - m23) / s;
+            q.Y = (m13 - m31) / s;
+            q.Z = (m21 - m12) / s;
+        }
+        else if (m11 > m22 && m11 > m33)
+        {
+            float s = MathF.Sqrt(1.0f + m11 - m22 - m33) * 2.0f;
+            q.W = (m32 - m23) / s;
+            q.X = 0.25f * s;
+            q.Y = (m21 + m12) / s;
+            q.Z = (m13 + m31) / s;
+        }
+        else if (m22 > m33)
+        {
+            float s = MathF.Sqrt(1.0f + m22 - m11 - m33) * 2.0f;
+            q.W = (m13 - m31) / s;
+            q.X = (m21 + m12) / s;
+            q.Y = 0.25f * s;
+            q.Z = (m32 + m23) / s;
+        }
+        else
+        {
+            float s = MathF.Sqrt(1.0f + m33 - m11 - m22) * 2.0f;
+            q.W = (m21 - m12) / s;
+            q.X = (m13 + m31) / s;
+            q.Y = (m32 + m23) / s;
+            q.Z = 0.25f * s;
+        }
+
+        return q;
     }
 }
 
