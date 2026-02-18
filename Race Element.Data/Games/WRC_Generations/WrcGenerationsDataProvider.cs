@@ -46,70 +46,44 @@ internal sealed class WrcGenerationsDataProvider : AbstractSimDataProvider
         localCar.Inputs.Brake = data.Brake;
         localCar.Inputs.Clutch = data.Clutch;
         localCar.Inputs.Steering = data.SteerAngle;
-        localCar.Inputs.Gear = (sbyte)data.CurrentGear + 1; // Assuming Gear is sbyte
+        localCar.Inputs.Gear = (int)data.CurrentGear + 1;
+
         localCar.Engine.Rpm = (int)(data.EngineRpms * 10f);
         localCar.Engine.MaxRpm = (int)(data.MaxRpms * 10f);
-
         localCar.Engine.IsRunning = localCar.Engine.Rpm > 0;
 
         localCar.Tyres.SlipRatio = [SlipCalc.Ratio(data.WheelSpeedFrontLeft, data.Speed),
                                     SlipCalc.Ratio(data.WheelSpeedFrontRight, data.Speed),
                                     SlipCalc.Ratio(data.WheelSpeedRearLeft, data.Speed),
-                                    SlipCalc.Ratio(data.WheelSpeedRearRight, data.Speed)
-                                   ];
-        //localCar.Tyres.SlipRatio = data.GetWheelSlipRatios();
-        //data.CalculateLongitudinalSlips();
+                                    SlipCalc.Ratio(data.WheelSpeedRearRight, data.Speed)];
 
-        //// Wheel speeds (assuming order FL, FR, RL, RR)
-        //localCar.WheelSpeedFrontLeft = data.WheelSpeedFrontLeft;
-        //localCar.WheelSpeedFrontRight = data.WheelSpeedFrontRight;
-        //localCar.WheelSpeedRearLeft = data.WheelSpeedRearLeft;
-        //localCar.WheelSpeedRearRight = data.WheelSpeedRearRight;
+        localCar.Tyres.Pressure = [data.WheelPressure0,
+                                   data.WheelPressure1,
+                                   data.WheelPressure2,
+                                   data.WheelPressure3];
 
-        //// Suspension positions
-        //localCar.SuspensionTravelFrontLeft = data.SuspensionPositionFrontLeft;
-        //localCar.SuspensionTravelFrontRight = data.SuspensionPositionFrontRight;
-        //localCar.SuspensionTravelRearLeft = data.SuspensionPositionRearLeft;
-        //localCar.SuspensionTravelRearRight = data.SuspensionPositionRearRight;
+        localCar.Tyres.Velocity = [data.WheelSpeedFrontLeft,
+                                   data.WheelSpeedFrontRight,
+                                   data.WheelSpeedRearLeft,
+                                   data.WheelSpeedRearRight];
 
-        //// Suspension velocities
-        //localCar.SuspensionVelocityFrontLeft = data.SuspensionVelocityFrontLeft;
-        //localCar.SuspensionVelocityFrontRight = data.SuspensionVelocityFrontRight;
-        //localCar.SuspensionVelocityRearLeft = data.SuspensionVelocityRearLeft;
-        //localCar.SuspensionVelocityRearRight = data.SuspensionVelocityRearRight;
+        localCar.Suspension.RideHeight = [data.SuspensionPositionFrontLeft,
+                                          data.SuspensionPositionFrontRight,
+                                          data.SuspensionPositionRearLeft,
+                                          data.SuspensionPositionRearRight];
 
+        localCar.Brakes.DiscTemperature = [data.BrakeTemp0,
+                                           data.BrakeTemp1,
+                                           data.BrakeTemp2,
+                                           data.BrakeTemp3];
 
-        //localCar.CurrentLapTime = data.CurrentLapTime;
-        //localCar.CurrentLapDistance = data.CurrentLapDistance;
-        //localCar.CurrentLapNumber = (int)data.CurrentLap;
-        //localCar.LastLapTime = data.LastLapTime;
+        var forwardVec = new Vector3(data.LocalForwardX, data.LocalForwardY, data.LocalForwardZ);
+        var rightVec = new Vector3(data.LocalRightX, data.LocalRightY, data.LocalRightZ);
+        var upVec = Vector3.Cross(rightVec, forwardVec);
+        localCar.Physics.Rotation = QuaternionFromBasis(rightVec, upVec, forwardVec);
 
-        //// Brake temperatures (assuming order FL, FR, RL, RR)
-        //localCar.BrakeTemperatureFrontLeft = data.BrakeTemp0;
-        //localCar.BrakeTemperatureFrontRight = data.BrakeTemp1;
-        //localCar.BrakeTemperatureRearLeft = data.BrakeTemp2;
-        //localCar.BrakeTemperatureRearRight = data.BrakeTemp3;
-
-        //// Wheel pressures (assuming order FL, FR, RL, RR)
-        //localCar.TyrePressureFrontLeft = data.WheelPressure0;
-        //localCar.TyrePressureFrontRight = data.WheelPressure1;
-        //localCar.TyrePressureRearLeft = data.WheelPressure2;
-        //localCar.TyrePressureRearRight = data.WheelPressure3;
-
-
-        // Map to SessionData
-        //sessionData.SessionType = (SessionType)(int)data.SessionType; // Assuming SessionType enum matches 0-3
-        //sessionData.LapCount = (int)data.TotalLaps;
-        //sessionData.CurrentSectorIndex = (int)data.CurrentSector;
-        //sessionData.Sector1Time = data.Sector1Time;
-        //sessionData.Sector2Time = data.Sector2Time;
-        //sessionData.TrackName = $"Track {data.TrackNumber}"; // Placeholder
-
-        // Map to GameData
-        //gameData.PlayerCarIndex = (int)data.CarPosition - 1; // Assuming 1-based position
-        //gameData.TrackLength = data.TrackSize; // If applicable
-
-        // Note: Additional mappings can be added based on exact field availability in LocalCarData/SessionData/GameData
+        localCar.Timing.CurrentLaptimeMS = (int)(data.CurrentLapTime * 1000);
+        localCar.Race.LapPositionPercentage = data.CurrentLapDistance / data.TrackSize;
     }
 
     internal override int PollingRate()
@@ -174,6 +148,57 @@ internal sealed class WrcGenerationsDataProvider : AbstractSimDataProvider
         {
             _udpClient?.Close();
         }
+    }
+
+    private static Quaternion QuaternionFromBasis(Vector3 right, Vector3 up, Vector3 forward)
+    {
+        var m11 = right.X;
+        var m12 = up.X;
+        var m13 = forward.X;
+        var m21 = right.Y;
+        var m22 = up.Y;
+        var m23 = forward.Y;
+        var m31 = right.Z;
+        var m32 = up.Z;
+        var m33 = forward.Z;
+
+        float trace = m11 + m22 + m33;
+        Quaternion q = new();
+
+        if (trace > 0.0f)
+        {
+            float s = MathF.Sqrt(trace + 1.0f) * 2.0f;
+            q.W = 0.25f * s;
+            q.X = (m32 - m23) / s;
+            q.Y = (m13 - m31) / s;
+            q.Z = (m21 - m12) / s;
+        }
+        else if (m11 > m22 && m11 > m33)
+        {
+            float s = MathF.Sqrt(1.0f + m11 - m22 - m33) * 2.0f;
+            q.W = (m32 - m23) / s;
+            q.X = 0.25f * s;
+            q.Y = (m21 + m12) / s;
+            q.Z = (m13 + m31) / s;
+        }
+        else if (m22 > m33)
+        {
+            float s = MathF.Sqrt(1.0f + m22 - m11 - m33) * 2.0f;
+            q.W = (m13 - m31) / s;
+            q.X = (m21 + m12) / s;
+            q.Y = 0.25f * s;
+            q.Z = (m32 + m23) / s;
+        }
+        else
+        {
+            float s = MathF.Sqrt(1.0f + m33 - m11 - m22) * 2.0f;
+            q.W = (m21 - m12) / s;
+            q.X = (m13 + m31) / s;
+            q.Y = (m32 + m23) / s;
+            q.Z = 0.25f * s;
+        }
+
+        return q;
     }
 }
 
